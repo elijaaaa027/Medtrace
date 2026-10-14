@@ -1,0 +1,13 @@
+{
+  "name": "medtrace",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "node dev-server.cjs",
+    "start": "node dev-server.cjs",
+    "build": "echo 'build ok'"
+  },
+  "dependencies": {
+    "@google/genai": "^2.29.1"
+  }
+}
+

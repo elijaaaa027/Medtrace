@@ -1,0 +1,6 @@
+{
+  "name": "MedTrace",
+  "description": "Comprehensive healthcare management platform with multi-language support (English, Tamil, Hindi), phone OTP verification, health snapshot, medical records, appointments, medications, insurance, guardian overview, receipts, and GPS hospital locator.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
