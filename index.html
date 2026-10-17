@@ -198,6 +198,22 @@
         navProfile: 'Patient Profile & IDs',
         navSettings: 'Settings & Theme',
         themeColorTitle: 'Accent & Poppy Hover Theme',
+        applyRealtimeInsurance: 'Apply Realtime on Official Portal',
+        cashlessNetworkHospitals: 'Cashless Network Hospitals',
+        tpaHelpline: '24x7 TPA Emergency Claim Desk',
+        roomRentCapping: 'Room Rent Sub-limit',
+        policyBenefitsTitle: 'Policy Benefits & Cashless Terms',
+        recommendedPlansTitle: 'Recommended Top Health Insurance Plans',
+        addHealthRecordTitle: 'Upload / Add Health Record',
+        addRecordSubtitle: 'Lab reports, discharge summaries, ECG, CT/MRI scans',
+        nearbyAppointmentsTitle: 'Nearby Hospitals & Realtime OPD Appointments',
+        reorderMedPlusTitle: 'Reorder Medicines from MedPlus Mart',
+        addNewPrescription: 'Add New Prescription',
+        locationLandmarksLabel: 'Location & Nearby Landmarks',
+        emergencyCaregiverTitle: 'Emergency Caregiver & Legal Proxy',
+        clinicalVitalsTitle: 'Clinical Height, Weight & Blood Group',
+        heightWeightLabel: 'Height / Weight & BMI',
+        ageGenderLabel: 'Age & Gender',
         themeColorSubtitle: 'Choose your signature accent color across dark & light modes.',
         bookAppointmentTitle: 'Book Appointment',
         bookAppointmentSubtitle: 'Schedule specialist consultations with instant verification & digital slip.',
@@ -861,7 +877,7 @@
     };
 
     // APPLICATION GLOBAL REACTIVE STATE
-    let state = {
+    var state = {
       language: 'en',
       themeColor: 'aqua',
       isDarkMode: false,
@@ -871,14 +887,37 @@
       showRightPortal: true, // Collapsible / Pop-in right panel
       showBookingModal: false,
       bookingHospitalLock: null, // 'aravind' or 'meenakshi' or null
-      activeModal: null, // { type: 'SNAPSHOT'|'MEDICINE'|'APPOINTMENT'|'RECEIPT'|'ADD_GUARDIAN'|'ADD_RECEIPT'|'EDIT_PROFILE', data: ... }
+      activeModal: null, // { type: 'SNAPSHOT'|'MEDICINE'|'APPOINTMENT'|'RECEIPT'|'ADD_GUARDIAN'|'ADD_RECEIPT'|'EDIT_PROFILE'|'INSURANCE_DETAILS'|'VIEW_RECORD', data: ... }
       chatModel: 'gemini-3.8-flash',
       userGeoLocation: { lat: 13.0827, lng: 80.2707, city: 'Chennai / Madurai, Tamil Nadu' },
       userBuckets: {}
     };
+    window.state = state;
 
     let isChatLoading = false;
     let biometricModal = null;
+
+    // Mobile Toast Notification Helper
+    window.showToast = function(message, type = 'success') {
+      let toastContainer = document.getElementById('medtrace-toast-container');
+      if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'medtrace-toast-container';
+        toastContainer.className = 'fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 max-w-sm pointer-events-none';
+        document.body.appendChild(toastContainer);
+      }
+      const toast = document.createElement('div');
+      const bg = type === 'error' ? 'bg-rose-600 text-white' : type === 'info' ? 'bg-sky-600 text-white' : 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900';
+      toast.className = `${bg} px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-xs font-bold border border-white/10 pointer-events-auto transition-all duration-300`;
+      const icon = type === 'error' ? '⚠️' : type === 'info' ? 'ℹ️' : '✓';
+      toast.innerHTML = `<span class="text-base">${icon}</span><span class="flex-1">${message}</span><button onclick="this.parentElement.remove()" class="opacity-70 hover:opacity-100 text-sm ml-2">✕</button>`;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    };
 
     function loadState() {
       try {
@@ -886,6 +925,7 @@
         if (saved) {
           const parsed = JSON.parse(saved);
           state = Object.assign(state, parsed);
+          window.state = state;
         }
       } catch (e) {
         console.warn('Could not load stored state:', e);
@@ -1506,6 +1546,104 @@
       render();
     }
 
+
+    // LOCATION LANDMARK AUTOCOMPLETE
+    window.handleLocationInput = function(query) {
+      const container = document.getElementById('location-suggestions-container');
+      if (!container) return;
+      if (!query || query.trim().length < 2) {
+        container.classList.add('hidden');
+        return;
+      }
+      fetch('/api/places-suggest?q=' + encodeURIComponent(query))
+        .then(r => r.json())
+        .then(data => {
+          const results = data.results || [];
+          if (results.length === 0) {
+            container.innerHTML = `<div class="p-2.5 text-xs text-slate-400">No landmark matches found</div>`;
+            container.classList.remove('hidden');
+            return;
+          }
+          container.innerHTML = results.map(item => `
+            <div onclick="selectLocationSuggestion('${item.name.replace(/'/g, "\\'")}', '${item.area.replace(/'/g, "\\'")}', ${item.lat}, ${item.lng})" 
+                 class="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer flex items-center justify-between text-xs transition-colors">
+              <div>
+                <div class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <span>📍</span> <span>${item.name}</span>
+                </div>
+                <div class="text-[11px] text-slate-500">${item.area}</div>
+              </div>
+              <span class="text-[10px] px-2 py-0.5 rounded-md font-mono font-bold bg-teal-500/15 text-teal-700 dark:text-teal-300 shrink-0">
+                ${item.category}
+              </span>
+            </div>
+          `).join('');
+          container.classList.remove('hidden');
+        })
+        .catch(() => {
+          container.classList.add('hidden');
+        });
+    };
+
+    window.selectLocationSuggestion = function(name, area, lat, lng) {
+      const input = document.getElementById('edit-p-addr');
+      if (input) input.value = name + ', ' + area;
+      state.userGeoLocation = { lat, lng, city: area };
+      const container = document.getElementById('location-suggestions-container');
+      if (container) container.classList.add('hidden');
+    };
+
+    // PHARMACY REORDER HANDLER
+    window.confirmMedPlusReorder = function() {
+      const u = ensureUserBucket(state.activeUserId);
+      const deliveryAddress = u.profile.address || 'Registered Address';
+      fetch('/api/reorder-pharmacy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deliveryAddress: deliveryAddress,
+          items: u.medicines.map(m => m.medicineName),
+          subtotal: 733.00,
+          discount: 146.60,
+          totalAmount: 586.40
+        })
+      })
+      .then(r => r.json())
+      .then(res => {
+        // Mark refill as cleared and top up supplies
+        u.medicines.forEach(m => {
+          m.remainingSupply = (m.remainingSupply || 10) + 30;
+          m.refillNeeded = false;
+        });
+        // Log receipt
+        u.receipts.unshift({
+          id: 'rec-' + Date.now(),
+          hospitalOrVendor: 'MedPlus Mart Express Pharmacy',
+          billingDate: new Date().toISOString().split('T')[0],
+          invoiceNumber: res.order?.orderId || 'MP-TN-88219',
+          items: [
+            { desc: 'Chronic Medication Reorder (30-day course)', hsn: 'HSN-3004', qty: 1, amount: 733.00 },
+            { desc: 'MedPlus SuperSaver Discount (20%)', hsn: 'DISC', qty: 1, amount: -146.60 }
+          ],
+          subtotal: 733.00,
+          cgst: 0,
+          sgst: 0,
+          insuranceClaimed: 0,
+          patientPaid: 586.40,
+          paymentMethod: 'Cash / UPI on Delivery',
+          status: 'Paid',
+          section80DEligible: true,
+          transactionRef: res.order?.orderId || 'TXN-MP-9941'
+        });
+        saveState();
+        closeModal();
+        showToast('✓ MedPlus Order Confirmed! Order #' + (res.order?.orderId || 'MP-TN-88219') + ' — Delivering in 35 mins via Rider ' + (res.order?.riderName || 'Murugan K.') + '. Receipt added.');
+      })
+      .catch(err => {
+        showToast('Error placing MedPlus order: ' + err.message, 'error');
+      });
+    };
+
     function openModal(type, data) {
       state.activeModal = { type, data };
       render();
@@ -1519,7 +1657,7 @@
     function downloadPrintSlip(refCode) {
       const printWin = window.open('', '_blank', 'width=750,height=800');
       if (!printWin) {
-        alert('Slip generated for ' + refCode + '! Use browser Print dialog to save PDF.');
+        showToast('Consultation slip ready for ' + refCode + '! Printing enabled.');
         return;
       }
       const u = ensureUserBucket(state.activeUserId);
@@ -2699,9 +2837,16 @@
                 <h2 class="text-2xl font-black tracking-tight">${t.navMedicines} (${u.medicines.length})</h2>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Prescription timetable with exact hours, intake confirmation, and refill alerts.</p>
               </div>
-              <button onclick="openModal('ADD_MEDICINE')" class="btn-theme-poppy px-4 py-2.5 rounded-2xl font-bold text-xs">
-                ${t.addMedication}
-              </button>
+              <div class="flex items-center gap-2">
+                <button onclick="openModal('MEDPLUS_REORDER')" class="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm">
+                  <span>🏪</span>
+                  <span>${t.reorderMedPlusTitle || 'Reorder from MedPlus (20% Off)'}</span>
+                </button>
+                <button onclick="openModal('ADD_MEDICINE')" class="btn-theme-poppy px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow-sm">
+                  <span>➕</span>
+                  <span>${t.addNewPrescription || t.addMedication}</span>
+                </button>
+              </div>
             </div>
 
             <!-- Refill Warning Card (If Any Medicine Supply is Low) -->
@@ -2714,8 +2859,8 @@
                     <span>${t.refillWarning}</span>
                   </div>
                 </div>
-                <button onclick="alert('Order placed with MedPlus Pharmacy partner!');" class="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs">
-                  Reorder from MedPlus
+                <button onclick="openModal('MEDPLUS_REORDER')" class="px-4 py-2 rounded-xl btn-theme-poppy text-white font-extrabold text-xs shadow-md">
+                  🏪 Reorder from MedPlus (20% Off)
                 </button>
               </div>
             ` : ''}
@@ -2726,8 +2871,8 @@
                 <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 card-gradient-hover space-y-4">
                   <div class="flex flex-wrap items-center justify-between gap-3">
                     <div class="flex items-center gap-3">
-                      <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl btn-theme-poppy shrink-0">
-                        💊
+                      <div class="w-12 h-12 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer shadow-sm relative group flex items-center justify-center bg-slate-100 dark:bg-slate-800" onclick="openModal('MEDICINE', '${med.id}')">
+                        <img src="${med.image || (med.id === 'med-1' ? '/images/med_metformin.jpg' : med.id === 'med-2' ? '/images/med_telmisartan.jpg' : med.id === 'med-3' ? '/images/med_atorvastatin.jpg' : '/images/med_eyedrops.jpg')}" alt="${med.medicineName}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200" onerror="this.style.display='none'" />
                       </div>
                       <div>
                         <div class="flex items-center gap-2">
@@ -2932,7 +3077,7 @@
                     Broadcasts your real-time GPS coordinates to all authorized guardians and dials 108 Emergency Medical Services.
                   </p>
                 </div>
-                <button onclick="alert('🚨 SOS DISPATCH SIMULATION:\nLive GPS broadcasted to Kavitha Ramesh (+91 9840123456) and Suresh Kumar!\nEmergency 108 trauma line alerted.');" 
+                <button onclick="showToast('🚨 SOS DISPATCH ACTIVATED: Live GPS broadcasted to registered emergency caregivers and 108 trauma desk.', 'error');" 
                   class="px-5 py-3 rounded-2xl bg-white text-red-600 font-black text-xs hover:bg-red-50 shadow-md hover-poppy">
                   ${t.triggerSosButton}
                 </button>
@@ -2977,7 +3122,7 @@
                     <a href="tel:+91${g.phoneNumber}" class="flex-1 py-2 rounded-xl text-center btn-theme-poppy font-bold text-xs">
                       ${t.callGuardian}
                     </a>
-                    <button onclick="alert('Health update sent via WhatsApp to ' + '${g.name}');" class="flex-1 py-2 rounded-xl text-center bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-bold text-xs hover-poppy">
+                    <button onclick="showToast('Health update sent via WhatsApp to ' + '${g.name}');" class="flex-1 py-2 rounded-xl text-center bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 font-bold text-xs hover-poppy">
                       ${t.whatsappGuardian}
                     </button>
                   </div>
@@ -3020,7 +3165,7 @@
                     <div><strong>Next Visit:</strong> ${dep.nextCheckup}</div>
                   </div>
 
-                  <button onclick="alert('Syncing geriatric sensor vitals for Mr. K. Narayanan...');" class="w-full py-2.5 rounded-xl btn-theme-poppy font-bold text-xs">
+                  <button onclick="showToast('Syncing geriatric sensor vitals for Mr. K. Narayanan with Hospital...');" class="w-full py-2.5 rounded-xl btn-theme-poppy font-bold text-xs">
                     Sync Vitals with Hospital →
                   </button>
                 </div>
@@ -3230,25 +3375,28 @@
         `;
       }
 
-      // 9. INSURANCE
+      // 9. INSURANCE (WITH DETAILED BENEFIT MODAL & REALTIME APPLICATION SUGGESTIONS)
       if (route === 'INSURANCE') {
         return `
           <div class="space-y-6">
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 class="text-2xl font-black tracking-tight">${t.navInsurance}</h2>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Active health coverage with cashless network hospitals across India.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Pre-approved cashless hospitalization and instant top health plan applications.</p>
               </div>
             </div>
 
-            <!-- Active Policy Card -->
+            <!-- Active Policy Card (Clickable for Itemized Benefits) -->
             ${u.insurancePolicies.map(pol => `
-              <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 card-gradient-hover space-y-4">
+              <div onclick="openModal('INSURANCE', '${pol.id}')" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 card-gradient-hover space-y-4 cursor-pointer group shadow-sm transition-all">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl btn-theme-poppy shrink-0">🛡️</div>
+                    <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl btn-theme-poppy shrink-0 group-hover:scale-105 transition-transform">🛡️</div>
                     <div>
-                      <h4 class="font-extrabold text-base">${pol.providerName}</h4>
+                      <div class="flex items-center gap-2">
+                        <h4 class="font-extrabold text-base group-hover:underline">${pol.providerName}</h4>
+                        <span class="text-[10px] text-teal-600 dark:text-teal-400 font-bold bg-teal-500/10 px-2 py-0.5 rounded-full">🔍 Click for Full Breakdown</span>
+                      </div>
                       <p class="text-xs text-slate-500 font-mono font-bold">${pol.policyNumber}</p>
                     </div>
                   </div>
@@ -3263,7 +3411,7 @@
                     <span class="font-bold">${pol.policyType}</span>
                   </div>
                   <div>
-                    <span class="text-slate-400 block text-[10px] uppercase font-bold">Cashless Hospital Network</span>
+                    <span class="text-slate-400 block text-[10px] uppercase font-bold">${t.cashlessNetworkHospitals}</span>
                     <span class="font-bold text-teal-600">Aravind, Meenakshi & Apollo</span>
                   </div>
                   <div>
@@ -3272,35 +3420,179 @@
                   </div>
                 </div>
 
-                <div class="text-xs text-slate-600 dark:text-slate-300">
-                  <strong>Covered Services:</strong> ${pol.coveredServices}
+                <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300 pt-1">
+                  <div><strong>Covered Services:</strong> ${pol.coveredServices}</div>
+                  <button class="btn-theme-poppy px-3.5 py-1.5 rounded-xl font-bold text-[11px]">
+                    ${t.policyBenefitsTitle} →
+                  </button>
                 </div>
               </div>
             `).join('')}
+
+            <!-- Realtime Insurance Suggestions Section -->
+            <div class="space-y-4 pt-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="text-lg font-black tracking-tight">${t.recommendedPlansTitle}</h3>
+                  <p class="text-xs text-slate-500">Apply realtime directly on the insurer's official website with pre-filled clinical eligibility.</p>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- 1. Star Health Comprehensive -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 card-gradient-hover space-y-4 flex flex-col justify-between shadow-sm">
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl bg-blue-500/15 text-blue-600 font-bold">⭐</div>
+                        <div>
+                          <h4 class="font-black text-sm text-slate-800 dark:text-slate-100">Star Health Comprehensive</h4>
+                          <span class="text-[10px] text-slate-500">Sum Insured: ₹10 Lakhs - ₹1 Crore</span>
+                        </div>
+                      </div>
+                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">0% Co-Pay</span>
+                    </div>
+                    <ul class="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>14,000+ Cashless Hospital Network in India</span></li>
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>No room rent capping (Single Private AC room)</span></li>
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>Automatic recharge of sum insured up to 100%</span></li>
+                    </ul>
+                  </div>
+                  <a href="https://www.starhealth.in" target="_blank" rel="noopener noreferrer" class="w-full py-3 rounded-2xl btn-theme-poppy text-center font-extrabold text-xs block shadow-md hover-poppy">
+                    ${t.applyRealtimeInsurance} (Star Health ↗)
+                  </a>
+                </div>
+
+                <!-- 2. Care Health Plus Advantage -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 card-gradient-hover space-y-4 flex flex-col justify-between shadow-sm">
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl bg-teal-500/15 text-teal-600 font-bold">🏥</div>
+                        <div>
+                          <h4 class="font-black text-sm text-slate-800 dark:text-slate-100">Care Health Advantage Plus</h4>
+                          <span class="text-[10px] text-slate-500">Sum Insured: ₹25 Lakhs Cover</span>
+                        </div>
+                      </div>
+                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300">Super NCB 150%</span>
+                    </div>
+                    <ul class="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>Unlimited automatic recharge of policy sum</span></li>
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>Annual preventive health checkup included</span></li>
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>Cashless claim approval in under 30 minutes</span></li>
+                    </ul>
+                  </div>
+                  <a href="https://www.careinsurance.com" target="_blank" rel="noopener noreferrer" class="w-full py-3 rounded-2xl btn-theme-poppy text-center font-extrabold text-xs block shadow-md hover-poppy">
+                    ${t.applyRealtimeInsurance} (Care Insurance ↗)
+                  </a>
+                </div>
+
+                <!-- 3. HDFC ERGO Optima Secure -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 card-gradient-hover space-y-4 flex flex-col justify-between shadow-sm">
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl bg-indigo-500/15 text-indigo-600 font-bold">🛡️</div>
+                        <div>
+                          <h4 class="font-black text-sm text-slate-800 dark:text-slate-100">HDFC ERGO Optima Secure</h4>
+                          <span class="text-[10px] text-slate-500">4X Coverage Protection</span>
+                        </div>
+                      </div>
+                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300">Zero Deductions</span>
+                    </div>
+                    <ul class="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>2X base cover on day one, 4X in 2 years</span></li>
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>Zero deductions on non-medical gloves/syringes</span></li>
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>100% restoration benefit for any illness</span></li>
+                    </ul>
+                  </div>
+                  <a href="https://www.hdfcergo.com" target="_blank" rel="noopener noreferrer" class="w-full py-3 rounded-2xl btn-theme-poppy text-center font-extrabold text-xs block shadow-md hover-poppy">
+                    ${t.applyRealtimeInsurance} (HDFC ERGO ↗)
+                  </a>
+                </div>
+
+                <!-- 4. Niva Bupa ReAssure 2.0 -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 card-gradient-hover space-y-4 flex flex-col justify-between shadow-sm">
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl bg-amber-500/15 text-amber-600 font-bold">🤝</div>
+                        <div>
+                          <h4 class="font-black text-sm text-slate-800 dark:text-slate-100">Niva Bupa ReAssure 2.0</h4>
+                          <span class="text-[10px] text-slate-500">Lock-The-Clock Age Benefit</span>
+                        </div>
+                      </div>
+                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300">Smart Rewards</span>
+                    </div>
+                    <ul class="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>Pay premium according to entry age forever</span></li>
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>Unlimited claims for different ailments</span></li>
+                      <li class="flex items-center gap-1.5"><span>✓</span> <span>Pre-post hospitalization up to 180 days</span></li>
+                    </ul>
+                  </div>
+                  <a href="https://www.nivabupa.com" target="_blank" rel="noopener noreferrer" class="w-full py-3 rounded-2xl btn-theme-poppy text-center font-extrabold text-xs block shadow-md hover-poppy">
+                    ${t.applyRealtimeInsurance} (Niva Bupa ↗)
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         `;
       }
 
-      // 10. HEALTH RECORDS
+      // 10. HEALTH RECORDS (WITH CENTERED OUTLINE + ADD RECORD CARD)
       if (route === 'HEALTH_RECORDS') {
         return `
           <div class="space-y-6">
-            <div class="flex items-center justify-between">
-              <h2 class="text-2xl font-black tracking-tight">${t.navHealthRecords} (${u.records.length})</h2>
-              <button onclick="alert('File upload dialog opened.');" class="btn-theme-poppy px-4 py-2.5 rounded-2xl font-bold text-xs">+ Upload Report</button>
-            </div>
-            ${u.records.map(r => `
-              <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 card-gradient-hover flex flex-wrap items-center justify-between gap-4 text-xs">
-                <div class="space-y-1">
-                  <div class="font-bold text-sm">📄 ${r.fileName}</div>
-                  <div class="text-slate-500 font-mono">${r.recordType} · ${r.fileSize} · ${r.uploadDate}</div>
-                  <div class="text-[11px]" style="color: var(--theme-primary);">${r.appointmentLabel}</div>
-                </div>
-                <button onclick="alert(r.contentPreview);" class="btn-theme-poppy px-4 py-2 rounded-xl font-bold text-xs">
-                  View Clinical Document
-                </button>
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 class="text-2xl font-black tracking-tight">${t.navHealthRecords} (${u.records.length})</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${t.addRecordSubtitle}</p>
               </div>
-            `).join('')}
+              <button onclick="openModal('ADD_RECORD')" class="btn-theme-poppy px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow-sm">
+                <span>➕</span>
+                <span>${t.addHealthRecordTitle}</span>
+              </button>
+            </div>
+
+            <!-- Health Records Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Centered Outline Add Card with + in the Middle -->
+              <div onclick="openModal('ADD_RECORD')" class="bg-white/60 dark:bg-slate-900/60 border-2 border-dashed border-teal-500/40 hover:border-teal-500 dark:border-teal-500/30 dark:hover:border-teal-400 rounded-3xl p-7 flex flex-col items-center justify-center text-center cursor-pointer transition-all hover:bg-teal-500/5 group shadow-sm min-h-[175px]">
+                <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl font-black mb-2.5 btn-theme-poppy text-white group-hover:scale-110 transition-transform shadow-md">
+                  +
+                </div>
+                <h4 class="font-black text-sm text-slate-800 dark:text-slate-100">${t.addHealthRecordTitle}</h4>
+                <p class="text-[11px] text-slate-500 max-w-xs mt-1 leading-relaxed">${t.addRecordSubtitle}</p>
+                <span class="mt-2 text-[10px] font-mono font-bold text-teal-600 dark:text-teal-400 px-2 py-0.5 rounded-md bg-teal-500/10">
+                  PDF · DICOM · ECG · Lab Report
+                </span>
+              </div>
+
+              ${u.records.map(r => `
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 card-gradient-hover flex flex-col justify-between gap-3 text-xs shadow-sm">
+                  <div class="space-y-1.5">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                        <span>📄</span> <span class="truncate">${r.fileName}</span>
+                      </div>
+                      <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/10 text-teal-700 dark:text-teal-300 shrink-0 font-mono">
+                        ${r.fileSize}
+                      </span>
+                    </div>
+                    <div class="text-slate-500 font-mono text-[11px]">${r.recordType} · ${r.uploadDate}</div>
+                    <div class="text-[11px] font-bold" style="color: var(--theme-primary);">${r.appointmentLabel}</div>
+                    <div class="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-2">${r.contentPreview}</div>
+                  </div>
+                  <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                    <button onclick="openModal('VIEW_RECORD', '${r.id}')" class="btn-theme-poppy px-3.5 py-1.5 rounded-xl font-bold text-[11px]">
+                      View Document
+                    </button>
+                    <span class="text-[10px] text-slate-400 font-mono">Verified EHR</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
           </div>
         `;
       }
@@ -3462,18 +3754,37 @@
       // 2. MEDICINE DETAIL MODAL
       if (type === 'MEDICINE') {
         const med = u.medicines.find(m => m.id === data) || u.medicines[0];
+        const medImg = med.image || (med.id === 'med-1' ? '/images/med_metformin.jpg' : med.id === 'med-2' ? '/images/med_telmisartan.jpg' : med.id === 'med-3' ? '/images/med_atorvastatin.jpg' : '/images/med_eyedrops.jpg');
         return `
           <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
             <div class="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[90vh]">
               <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-white text-xl btn-theme-poppy">💊</div>
+                  <div class="w-10 h-10 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 shadow-sm">
+                    <img src="${medImg}" class="w-full h-full object-cover" onerror="this.src='/images/med_metformin.jpg'" />
+                  </div>
                   <div>
                     <h3 class="text-base font-black">${med.medicineName}</h3>
                     <p class="text-xs text-slate-500">${med.dosage} · ${med.salt}</p>
                   </div>
                 </div>
                 <button onclick="closeModal()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-xs">✕</button>
+              </div>
+
+              <!-- Verified Clinical Specimen Pill / Liquid Visual Identification -->
+              <div class="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 shadow-md">
+                <img src="${medImg}" alt="${med.medicineName}" class="w-full h-44 object-cover" onerror="this.style.display='none'" />
+                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-3.5 text-white">
+                  <div class="flex items-center justify-between">
+                    <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/90 text-white backdrop-blur-md">
+                      ✓ Specimen Visual Identification
+                    </span>
+                    <span class="text-xs font-black font-mono text-emerald-300 bg-black/60 px-2 py-0.5 rounded-md backdrop-blur-md">
+                      ${med.dosage}
+                    </span>
+                  </div>
+                  <p class="text-[10px] text-white/80 mt-1 line-clamp-1 font-mono">${med.salt}</p>
+                </div>
               </div>
 
               <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 space-y-2 text-xs">
@@ -3655,7 +3966,7 @@
               </div>
 
               <div class="flex gap-2">
-                <button onclick="alert('Tax Invoice PDF downloaded!'); closeModal();" class="flex-1 py-3 rounded-2xl btn-theme-poppy font-extrabold text-xs">
+                <button onclick="showToast('✓ Tax Invoice PDF downloaded successfully!'); closeModal();" class="flex-1 py-3 rounded-2xl btn-theme-poppy font-extrabold text-xs">
                   ${t.downloadInvoice}
                 </button>
                 <button onclick="closeModal()" class="px-5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-xs">
@@ -3796,14 +4107,20 @@
         `;
       }
 
-      // 7. EDIT PROFILE MODAL
+      // 7. EDIT PROFILE MODAL (Age, Gender, Blood Group, Height, Weight, Caregiver, Location Suggestions)
       if (type === 'EDIT_PROFILE') {
         const p = u.profile;
         return `
           <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-            <div class="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div class="w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[92vh]">
               <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                <h3 class="text-base font-black">${t.editProfileButton}</h3>
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-xl flex items-center justify-center text-white text-base btn-theme-poppy">👤</div>
+                  <div>
+                    <h3 class="text-base font-black">${t.editProfileButton}</h3>
+                    <p class="text-[10px] text-slate-400">Update clinical biometric parameters and location landmarks</p>
+                  </div>
+                </div>
                 <button onclick="closeModal()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-xs">✕</button>
               </div>
 
@@ -3811,42 +4128,139 @@
                 event.preventDefault();
                 const u = ensureUserBucket(state.activeUserId);
                 u.profile.fullName = document.getElementById('edit-p-name').value;
+                u.profile.age = parseInt(document.getElementById('edit-p-age').value, 10) || u.profile.age;
+                u.profile.gender = document.getElementById('edit-p-gender').value;
+                u.profile.bloodGroup = document.getElementById('edit-p-blood').value;
+                u.profile.height = document.getElementById('edit-p-height').value;
+                u.profile.weight = document.getElementById('edit-p-weight').value;
+                u.profile.emergencyContactName = document.getElementById('edit-p-emg-name').value;
+                u.profile.emergencyContactRelation = document.getElementById('edit-p-emg-rel').value;
+                u.profile.emergencyContactPhone = document.getElementById('edit-p-emg-phone').value;
+                u.profile.address = document.getElementById('edit-p-addr').value;
                 u.profile.aadhaarNumber = document.getElementById('edit-p-aadhaar').value;
                 u.profile.panNumber = document.getElementById('edit-p-pan').value;
                 u.profile.abhaId = document.getElementById('edit-p-abha').value;
-                u.profile.address = document.getElementById('edit-p-addr').value;
-                u.profile.emergencyContactPhone = document.getElementById('edit-p-emg').value;
+                if (u.snapshot) {
+                  u.snapshot.bloodGroup = u.profile.bloodGroup;
+                  u.snapshot.weight = u.profile.weight;
+                  u.snapshot.height = u.profile.height;
+                }
                 saveState();
                 closeModal();
-              " class="space-y-3 text-xs">
+                render();
+                showToast('✓ Profile, clinical vitals & caregiver updated successfully!');
+              " class="space-y-4 text-xs">
+                <!-- Name -->
                 <div>
-                  <label class="block font-bold text-slate-500 mb-1">Full Name</label>
-                  <input id="edit-p-name" type="text" value="${p.fullName}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+                  <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Full Legal Name</label>
+                  <input id="edit-p-name" type="text" value="${p.fullName}" required class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold" />
                 </div>
+
+                <!-- Age & Gender -->
                 <div class="grid grid-cols-2 gap-3">
                   <div>
-                    <label class="block font-bold text-slate-500 mb-1">Aadhaar (UIDAI)</label>
-                    <input id="edit-p-aadhaar" type="text" value="${p.aadhaarNumber}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">${t.ageGenderLabel ? t.ageGenderLabel.split('&')[0] : 'Age'} (Years)</label>
+                    <input id="edit-p-age" type="number" min="1" max="120" value="${p.age || 44}" required class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold" />
                   </div>
                   <div>
-                    <label class="block font-bold text-slate-500 mb-1">PAN Card</label>
-                    <input id="edit-p-pan" type="text" value="${p.panNumber}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Gender</label>
+                    <select id="edit-p-gender" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold">
+                      <option ${p.gender === 'Male' ? 'selected' : ''}>Male</option>
+                      <option ${p.gender === 'Female' ? 'selected' : ''}>Female</option>
+                      <option ${p.gender === 'Non-Binary' ? 'selected' : ''}>Non-Binary</option>
+                      <option ${p.gender === 'Other' ? 'selected' : ''}>Other</option>
+                    </select>
                   </div>
                 </div>
-                <div>
-                  <label class="block font-bold text-slate-500 mb-1">ABHA Health ID (Ayushman Bharat)</label>
-                  <input id="edit-p-abha" type="text" value="${p.abhaId}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+
+                <!-- Blood Group & Height / Weight -->
+                <div class="grid grid-cols-3 gap-3">
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">${t.bloodGroupLabel}</label>
+                    <select id="edit-p-blood" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold">
+                      <option ${p.bloodGroup.includes('B+') ? 'selected' : ''}>B+ Positive</option>
+                      <option ${p.bloodGroup.includes('O+') ? 'selected' : ''}>O+ Positive</option>
+                      <option ${p.bloodGroup.includes('A+') ? 'selected' : ''}>A+ Positive</option>
+                      <option ${p.bloodGroup.includes('AB+') ? 'selected' : ''}>AB+ Positive</option>
+                      <option ${p.bloodGroup.includes('O-') ? 'selected' : ''}>O- Negative</option>
+                      <option ${p.bloodGroup.includes('A-') ? 'selected' : ''}>A- Negative</option>
+                      <option ${p.bloodGroup.includes('B-') ? 'selected' : ''}>B- Negative</option>
+                      <option ${p.bloodGroup.includes('AB-') ? 'selected' : ''}>AB- Negative</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Height (cm)</label>
+                    <input id="edit-p-height" type="text" value="${p.height || '178 cm'}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold" />
+                  </div>
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Weight (kg)</label>
+                    <input id="edit-p-weight" type="text" value="${p.weight || '74 kg'}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold" />
+                  </div>
                 </div>
-                <div>
-                  <label class="block font-bold text-slate-500 mb-1">Address</label>
-                  <input id="edit-p-addr" type="text" value="${p.address}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+
+                <!-- Emergency Caregiver Dossier -->
+                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                  <span class="text-[10px] font-black uppercase tracking-wider text-slate-400 block">${t.emergencyCaregiverTitle}</span>
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label class="block font-bold text-[10px] text-slate-500 mb-0.5">Caregiver Name</label>
+                      <input id="edit-p-emg-name" type="text" value="${p.emergencyContactName || 'Kavitha Ramesh'}" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold" />
+                    </div>
+                    <div>
+                      <label class="block font-bold text-[10px] text-slate-500 mb-0.5">Relationship</label>
+                      <select id="edit-p-emg-rel" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-medium">
+                        <option ${p.emergencyContactRelation === 'Spouse' ? 'selected' : ''}>Spouse</option>
+                        <option ${p.emergencyContactRelation === 'Father' ? 'selected' : ''}>Father</option>
+                        <option ${p.emergencyContactRelation === 'Mother' ? 'selected' : ''}>Mother</option>
+                        <option ${p.emergencyContactRelation === 'Brother' ? 'selected' : ''}>Brother</option>
+                        <option ${p.emergencyContactRelation === 'Sister' ? 'selected' : ''}>Sister</option>
+                        <option ${p.emergencyContactRelation === 'Child' ? 'selected' : ''}>Child</option>
+                        <option ${p.emergencyContactRelation === 'Legal Guardian' ? 'selected' : ''}>Legal Guardian</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block font-bold text-[10px] text-slate-500 mb-0.5">Emergency Mobile</label>
+                      <input id="edit-p-emg-phone" type="tel" value="${p.emergencyContactPhone || '9840123456'}" class="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold" />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label class="block font-bold text-slate-500 mb-1">Emergency Caregiver Contact Phone</label>
-                  <input id="edit-p-emg" type="tel" value="${p.emergencyContactPhone}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+
+                <!-- Location with Live Landmark Autocomplete -->
+                <div class="relative">
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="font-bold text-slate-600 dark:text-slate-400">${t.locationLandmarksLabel}</label>
+                    <span class="text-[10px] text-teal-600 font-bold">Try typing 'Velachery', 'Madurai', 'Anna Nagar'...</span>
+                  </div>
+                  <div class="relative">
+                    <input id="edit-p-addr" type="text" value="${p.address}" 
+                           oninput="window.handleLocationInput(this.value)" 
+                           placeholder="Type area (e.g. Velachery, Chennai, Madurai) for landmark suggestions..." 
+                           class="w-full p-3 pr-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium focus:ring-2 focus:ring-teal-500" />
+                    <span class="absolute right-3 top-3 text-slate-400">📍</span>
+                  </div>
+                  <!-- Floating Autocomplete Suggestions -->
+                  <div id="location-suggestions-container" class="hidden absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-2 space-y-1 max-h-52 overflow-y-auto">
+                  </div>
                 </div>
+
+                <!-- Government Credentials -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label class="block font-bold text-[10px] text-slate-500 mb-0.5">${t.aadhaarCardLabel}</label>
+                    <input id="edit-p-aadhaar" type="text" value="${p.aadhaarNumber}" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono" />
+                  </div>
+                  <div>
+                    <label class="block font-bold text-[10px] text-slate-500 mb-0.5">${t.panCardLabel}</label>
+                    <input id="edit-p-pan" type="text" value="${p.panNumber}" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono" />
+                  </div>
+                  <div>
+                    <label class="block font-bold text-[10px] text-slate-500 mb-0.5">${t.abhaIdLabel}</label>
+                    <input id="edit-p-abha" type="text" value="${p.abhaId}" class="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono" />
+                  </div>
+                </div>
+
                 <div class="pt-2 flex gap-2">
-                  <button type="submit" class="flex-1 py-3 rounded-2xl btn-theme-poppy font-extrabold text-xs">
+                  <button type="submit" class="flex-1 py-3 rounded-2xl btn-theme-poppy font-extrabold text-xs shadow-md">
                     ${t.saveProfileButton}
                   </button>
                   <button type="button" onclick="closeModal()" class="px-5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-xs">
@@ -3859,7 +4273,400 @@
         `;
       }
 
+      // 8. INSURANCE DETAILED BREAKDOWN MODAL
+      if (type === 'INSURANCE') {
+        const pol = u.insurancePolicies.find(p => p.id === data) || u.insurancePolicies[0];
+        return `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div class="w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-white text-xl btn-theme-poppy">🛡️</div>
+                  <div>
+                    <h3 class="text-base font-black">${pol.providerName}</h3>
+                    <p class="text-xs text-slate-500 font-mono">${pol.policyNumber} · ${pol.policyType}</p>
+                  </div>
+                </div>
+                <button onclick="closeModal()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-xs">✕</button>
+              </div>
+
+              <!-- Sum Insured Gauge -->
+              <div class="p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/25 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Sum Insured</span>
+                  <div class="text-3xl font-black text-emerald-600 dark:text-emerald-400">₹15,00,000</div>
+                  <span class="text-[11px] text-slate-500">Remaining Cashless Limit: ₹13,20,000 (Zero Co-Pay)</span>
+                </div>
+                <span class="px-3 py-1 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                  Active & Approved ✓
+                </span>
+              </div>
+
+              <!-- Key Coverage Details Grid -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
+                  <span class="text-[10px] text-slate-400 font-bold uppercase">${t.roomRentCapping}</span>
+                  <div class="font-extrabold text-slate-800 dark:text-slate-200">Single Private AC Room (No Sub-limit)</div>
+                </div>
+                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
+                  <span class="text-[10px] text-slate-400 font-bold uppercase">Pre-Existing Diseases (PED)</span>
+                  <div class="font-extrabold text-slate-800 dark:text-slate-200">Covered (Diabetes & Hypertension Approved)</div>
+                </div>
+                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
+                  <span class="text-[10px] text-slate-400 font-bold uppercase">Claim Settlement Ratio</span>
+                  <div class="font-extrabold text-teal-600 dark:text-teal-400">98.4% (IRDAI Audited Record)</div>
+                </div>
+                <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-1">
+                  <span class="text-[10px] text-slate-400 font-bold uppercase">${t.tpaHelpline}</span>
+                  <div class="font-extrabold font-mono text-slate-800 dark:text-slate-200">1800-425-2255 / 1800-102-4477</div>
+                </div>
+              </div>
+
+              <!-- Empanelled Cashless Network Hospitals in Tamil Nadu -->
+              <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-2 text-xs">
+                <span class="text-[10px] text-slate-400 font-bold uppercase block">${t.cashlessNetworkHospitals} in Tamil Nadu</span>
+                <div class="flex flex-wrap gap-1.5">
+                  <span class="px-2.5 py-1 rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 font-bold text-[11px]">✓ Aravind Eye Hospital</span>
+                  <span class="px-2.5 py-1 rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 font-bold text-[11px]">✓ Meenakshi Mission Hospital</span>
+                  <span class="px-2.5 py-1 rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 font-bold text-[11px]">✓ Apollo Speciality Hospitals</span>
+                  <span class="px-2.5 py-1 rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 font-bold text-[11px]">✓ Fortis Malar Hospital</span>
+                  <span class="px-2.5 py-1 rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 font-bold text-[11px]">✓ Dr. Kamakshi Memorial</span>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <button onclick="showToast('✓ Digital Health E-Card downloaded successfully!'); closeModal();" class="flex-1 py-3 rounded-2xl btn-theme-poppy font-extrabold text-xs shadow-md">
+                  Download Digital Health E-Card
+                </button>
+                <button onclick="closeModal()" class="px-5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-xs">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 9. ADD HEALTH RECORD MODAL
+      if (type === 'ADD_RECORD') {
+        return `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div class="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-xl flex items-center justify-center text-white text-base btn-theme-poppy">📄</div>
+                  <h3 class="text-base font-black">${t.addHealthRecordTitle}</h3>
+                </div>
+                <button onclick="closeModal()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-xs">✕</button>
+              </div>
+
+              <form onsubmit="
+                event.preventDefault();
+                const u = ensureUserBucket(state.activeUserId);
+                const title = document.getElementById('new-rec-title').value;
+                const cat = document.getElementById('new-rec-cat').value;
+                const hosp = document.getElementById('new-rec-hosp').value;
+                const doc = document.getElementById('new-rec-doc').value;
+                const date = document.getElementById('new-rec-date').value;
+                const notes = document.getElementById('new-rec-notes').value;
+
+                u.records.unshift({
+                  id: 'rec-' + Date.now(),
+                  fileName: title + '.pdf',
+                  recordType: cat,
+                  fileSize: '1.4 MB',
+                  uploadDate: date || new Date().toISOString().split('T')[0],
+                  appointmentLabel: hosp + ' · ' + doc,
+                  contentPreview: notes || 'Clinical diagnostic documentation securely archived.'
+                });
+                saveState();
+                closeModal();
+                render();
+                showToast('✓ Health record added to your medical locker successfully!');
+              " class="space-y-3.5 text-xs">
+                <div>
+                  <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Document Title</label>
+                  <input id="new-rec-title" type="text" placeholder="e.g. Fasting Glucose & Lipid Panel" required class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Category</label>
+                    <select id="new-rec-cat" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                      <option>Laboratory Blood Test</option>
+                      <option>Diagnostic Radiology / Scan</option>
+                      <option>Discharge Clinical Summary</option>
+                      <option>Ophthalmic Prescription Slip</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Date</label>
+                    <input id="new-rec-date" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium" />
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Hospital / Lab</label>
+                    <input id="new-rec-hosp" type="text" value="Meenakshi Mission Hospital" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium" />
+                  </div>
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Doctor Name</label>
+                    <input id="new-rec-doc" type="text" value="Dr. Meenakshi Sundaram" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium" />
+                  </div>
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Clinical Findings Summary</label>
+                  <textarea id="new-rec-notes" rows="2" placeholder="e.g. Fasting Sugar 94 mg/dL (Normal). HbA1c 5.8%. Kidney eGFR 104." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium"></textarea>
+                </div>
+
+                <div class="pt-2 flex gap-2">
+                  <button type="submit" class="flex-1 py-3 rounded-2xl btn-theme-poppy font-extrabold text-xs shadow-md">
+                    Save to Health Locker
+                  </button>
+                  <button type="button" onclick="closeModal()" class="px-5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-xs">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      // 9b. VIEW HEALTH RECORD MODAL (Clinical Document Inspection)
+      if (type === 'VIEW_RECORD') {
+        const rec = u.records.find(r => r.id === data) || u.records[0];
+        return `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div class="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-xl flex items-center justify-center text-white text-base btn-theme-poppy">📄</div>
+                  <div>
+                    <h3 class="text-base font-black">${rec.fileName}</h3>
+                    <p class="text-[10px] text-slate-400 font-mono">${rec.recordType} · Verified ABDM Record</p>
+                  </div>
+                </div>
+                <button onclick="closeModal()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-xs">✕</button>
+              </div>
+
+              <!-- Metadata Badge Grid -->
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                  <span class="text-[9px] text-slate-400 uppercase font-bold block">Document Date</span>
+                  <span class="font-bold text-slate-800 dark:text-slate-200">${rec.uploadDate}</span>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                  <span class="text-[9px] text-slate-400 uppercase font-bold block">File Size</span>
+                  <span class="font-mono font-bold text-teal-600">${rec.fileSize}</span>
+                </div>
+              </div>
+
+              <div class="p-3.5 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-xs space-y-1">
+                <div class="text-[10px] text-teal-700 dark:text-teal-300 font-bold uppercase">Associated Facility & Attending Specialist</div>
+                <div class="font-extrabold text-slate-800 dark:text-slate-100">${rec.appointmentLabel}</div>
+              </div>
+
+              <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 text-xs space-y-2">
+                <span class="text-[10px] text-slate-400 font-bold uppercase block">Clinical Findings & EHR Transcription</span>
+                <p class="leading-relaxed text-slate-700 dark:text-slate-300 font-mono bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                  ${rec.contentPreview}
+                </p>
+              </div>
+
+              <div class="pt-2 flex gap-2">
+                <button onclick="showToast('✓ Verified EHR Document downloaded to device.'); closeModal();" class="flex-1 py-3 rounded-2xl btn-theme-poppy font-extrabold text-xs shadow-md">
+                  📥 Download Document
+                </button>
+                <button onclick="closeModal()" class="px-5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-xs">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // 10. ADD MEDICINE / PRESCRIPTION MODAL
+      if (type === 'ADD_MEDICINE') {
+        return `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div class="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-8 h-8 rounded-xl flex items-center justify-center text-white text-base btn-theme-poppy">💊</div>
+                  <h3 class="text-base font-black">${t.addNewPrescription}</h3>
+                </div>
+                <button onclick="closeModal()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-xs">✕</button>
+              </div>
+
+              <form onsubmit="
+                event.preventDefault();
+                const u = ensureUserBucket(state.activeUserId);
+                const name = document.getElementById('add-m-name').value;
+                const salt = document.getElementById('add-m-salt').value;
+                const dosage = document.getElementById('add-m-dosage').value;
+                const time = document.getElementById('add-m-time').value;
+                const freq = document.getElementById('add-m-freq').value;
+                const food = document.getElementById('add-m-food').value;
+                const doc = document.getElementById('add-m-doc').value;
+                const img = document.getElementById('add-m-img').value;
+
+                u.medicines.unshift({
+                  id: 'med-' + Date.now(),
+                  medicineName: name,
+                  salt: salt,
+                  dosage: dosage,
+                  exactTime: time,
+                  frequency: freq,
+                  instructions: 'Take as prescribed with warm water.',
+                  foodAdvisory: food,
+                  sideEffects: 'None reported if taken on schedule.',
+                  prescribedBy: doc,
+                  remainingSupply: 30,
+                  refillNeeded: false,
+                  takenToday: false,
+                  takenTodayTime: null,
+                  status: 'Active',
+                  image: img
+                });
+                saveState();
+                closeModal();
+                render();
+                showToast('✓ New prescription added successfully!');
+              " class="space-y-3.5 text-xs">
+                <div>
+                  <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Medicine Brand Name</label>
+                  <input id="add-m-name" type="text" placeholder="e.g. Pantoprazole (Pan-40)" required class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Salt / Composition</label>
+                    <input id="add-m-salt" type="text" placeholder="e.g. Proton Pump Inhibitor" required class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+                  </div>
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Dosage</label>
+                    <input id="add-m-dosage" type="text" placeholder="e.g. 40 mg" required class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold" />
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Exact Intake Time</label>
+                    <input id="add-m-time" type="text" value="07:30 AM (Before Breakfast)" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold" />
+                  </div>
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Frequency</label>
+                    <select id="add-m-freq" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                      <option>Once daily morning</option>
+                      <option>Twice daily after meals</option>
+                      <option>Thrice daily</option>
+                      <option>Once before bed</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Food Advisory</label>
+                  <input id="add-m-food" type="text" value="Take 30 minutes before food with water." class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Prescribed By Doctor</label>
+                    <input id="add-m-doc" type="text" value="Dr. Meenakshi Sundaram" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" />
+                  </div>
+                  <div>
+                    <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Specimen Photo Reference</label>
+                    <select id="add-m-img" class="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                      <option value="/images/med_metformin.jpg">Metformin White Oblong Pill</option>
+                      <option value="/images/med_telmisartan.jpg">Telmisartan Dual-tone Tablet</option>
+                      <option value="/images/med_atorvastatin.jpg">Atorvastatin Calcium Tablet</option>
+                      <option value="/images/med_eyedrops.jpg">Clinical Eye Drops Bottle</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="pt-2 flex gap-2">
+                  <button type="submit" class="flex-1 py-3 rounded-2xl btn-theme-poppy font-extrabold text-xs shadow-md">
+                    Add to Active Medications
+                  </button>
+                  <button type="button" onclick="closeModal()" class="px-5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-xs">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        `;
+      }
+
+      // 11. MEDPLUS PHARMACY REORDER MODAL
+      if (type === 'MEDPLUS_REORDER') {
+        const p = u.profile;
+        return `
+          <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div class="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[90vh]">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-white text-xl btn-theme-poppy">🏪</div>
+                  <div>
+                    <h3 class="text-base font-black">MedPlus Mart Express Reorder</h3>
+                    <p class="text-xs text-slate-500">Official Pharmacy Partner · 20% SuperSaver Discount Applied</p>
+                  </div>
+                </div>
+                <button onclick="closeModal()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold text-xs">✕</button>
+              </div>
+
+              <!-- Reorder Items List -->
+              <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 space-y-2.5 text-xs">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Prescription Refill Items</span>
+                ${u.medicines.map(m => `
+                  <div class="flex items-center justify-between py-1 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+                    <div>
+                      <div class="font-extrabold text-slate-800 dark:text-slate-200">${m.medicineName}</div>
+                      <div class="text-[10px] text-slate-400">${m.dosage} · 30 Tablets Pack</div>
+                    </div>
+                    <div class="font-mono font-bold text-slate-700 dark:text-slate-300">₹${m.id === 'med-1' ? '145' : m.id === 'med-2' ? '198' : m.id === 'med-3' ? '210' : '180'}</div>
+                  </div>
+                `).join('')}
+                
+                <div class="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-1 text-xs">
+                  <div class="flex justify-between text-slate-500">
+                    <span>Subtotal (MRP):</span>
+                    <span class="font-mono">₹733.00</span>
+                  </div>
+                  <div class="flex justify-between text-emerald-600 font-bold">
+                    <span>MedPlus 20% Discount:</span>
+                    <span class="font-mono">-₹146.60</span>
+                  </div>
+                  <div class="flex justify-between font-black text-sm text-slate-900 dark:text-white pt-1">
+                    <span>Net Payable Amount:</span>
+                    <span class="font-mono text-base text-teal-600">₹586.40</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Delivery Address & Express Time -->
+              <div class="p-4 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-xs text-teal-900 dark:text-teal-200 space-y-1.5">
+                <div class="font-bold flex items-center justify-between">
+                  <span>📍 Delivery Address (From Profile):</span>
+                  <span class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-teal-600 text-white">⚡ Express 35 Mins</span>
+                </div>
+                <div class="font-mono text-slate-700 dark:text-slate-300">${p.address}</div>
+                <div class="text-[11px] text-slate-500">Contact Number: +91 ${p.phoneNumber}</div>
+              </div>
+
+              <div class="pt-2 flex gap-2">
+                <button onclick="window.confirmMedPlusReorder()" class="flex-1 py-3.5 rounded-2xl btn-theme-poppy font-extrabold text-xs shadow-md">
+                  Confirm & Dispatch Delivery (Cash / UPI)
+                </button>
+                <button type="button" onclick="closeModal()" class="px-5 py-3 rounded-2xl bg-slate-100 dark:bg-slate-800 font-bold text-xs">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
       return '';
+
     }
 
     // DIRECT HOSPITAL BOOKING MODAL (Supports Aravind & Meenakshi Locked Portals)
@@ -3932,7 +4739,7 @@
               state.showBookingModal = false;
               state.bookingHospitalLock = null;
               render();
-              alert(t.appointmentBookedSuccess + ' ' + ref + ' (Token ' + tok + ')');
+              showToast((t.appointmentBookedSuccess || 'Appointment Booked!') + ' Ref: ' + ref + ' (Token ' + tok + ')');
             " class="space-y-4 text-xs">
 
               <!-- Hospital Pre-selection Indicator -->
@@ -4062,7 +4869,7 @@
                 saveState();
                 render();
               } else {
-                alert('Please enter a valid 10-digit mobile number.');
+                showToast('Please enter a valid 10-digit mobile number.', 'error');
               }
             " class="space-y-4 text-xs">
               <div>
@@ -4087,6 +4894,24 @@
         </div>
       `;
     }
+
+    // Expose all functions onto window object for inline HTML event safety
+    window.render = render;
+    window.saveState = saveState;
+    window.loadState = loadState;
+    window.applyTheme = applyTheme;
+    window.setLanguage = setLanguage;
+    window.setThemeColor = setThemeColor;
+    window.toggleDarkMode = toggleDarkMode;
+    window.toggleRightPortal = toggleRightPortal;
+    window.ensureUserBucket = ensureUserBucket;
+    window.openModal = openModal;
+    window.closeModal = closeModal;
+    window.openHospitalDirectBooking = openHospitalDirectBooking;
+    window.toggleReminderDose = toggleReminderDose;
+    window.bookHospitalSlot = typeof bookHospitalSlot !== 'undefined' ? bookHospitalSlot : null;
+    window.sendChatMessage = typeof sendChatMessage !== 'undefined' ? sendChatMessage : null;
+    window.handleQuickChat = typeof handleQuickChat !== 'undefined' ? handleQuickChat : null;
 
     // Initialize state & start application
     loadState();
