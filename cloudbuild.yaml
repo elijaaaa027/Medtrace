@@ -1,0 +1,127 @@
+# ==============================================================================
+# Google Cloud Build Pipeline - MedTrace
+# Fixes "Failed to import image gs://run-sources-.../app.zip" by:
+# 1. Packaging a verified POSIX USTAR app.tar.gz archive
+# 2. Building and pushing the container image to Google Container Registry
+# 3. Deploying the pre-built image to Cloud Run (100% bypasses GCS archive import errors)
+# ==============================================================================
+
+steps:
+  # ----------------------------------------------------------------------------
+  # Step 1: Clean build artifacts and package workspace as a verified app.tar.gz
+  # ----------------------------------------------------------------------------
+  - name: 'ubuntu'
+    id: 'package-app-tar-gz'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        echo "=========================================================="
+        echo "Step 1: Packaging application into verified app.tar.gz"
+        echo "=========================================================="
+        
+        # Clean intermediate build caches to prevent archive bloat and corruption
+        rm -rf app/build build .gradle .kotlin .build-outputs node_modules
+        
+        # Verify critical root-level deployment files exist
+        for f in Dockerfile package.json server.cjs dev-server.cjs index.html; do
+          if [ ! -f "$$f" ]; then
+            echo "Error: Required file '$$f' missing from root directory!"
+            exit 1
+          fi
+        done
+        
+        # Create standard POSIX USTAR tar.gz archive in /tmp first
+        tar --warning=no-file-changed \
+            --format=ustar \
+            --exclude='./node_modules' \
+            --exclude='./.git' \
+            --exclude='./.gradle' \
+            --exclude='./build' \
+            --exclude='./app/build' \
+            --exclude='./.kotlin' \
+            --exclude='./.build-outputs' \
+            --exclude='./*.keystore' \
+            --exclude='./*.keystore.base64' \
+            --exclude='./.dev.env.json' \
+            --exclude='./*.log' \
+            --exclude='./app.tar.gz' \
+            -czf /tmp/app.tar.gz .
+            
+        cp /tmp/app.tar.gz ./app.tar.gz
+        
+        if [ ! -s ./app.tar.gz ]; then
+          echo "FATAL: app.tar.gz is empty or missing!"
+          exit 1
+        fi
+        
+        echo "Verified app.tar.gz created successfully:"
+        ls -lh ./app.tar.gz
+
+  # ----------------------------------------------------------------------------
+  # Step 2: Build container image from Dockerfile
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-docker-image'
+    args:
+      - 'build'
+      - '--tag'
+      - '$_IMAGE_NAME'
+      - '--tag'
+      - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:latest'
+      - '.'
+
+  # ----------------------------------------------------------------------------
+  # Step 3: Push container image to Google Container Registry
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-docker-image'
+    args:
+      - 'push'
+      - '$_IMAGE_NAME'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-latest-tag'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:latest'
+
+  # ----------------------------------------------------------------------------
+  # Step 4: Deploy pre-built container image directly to Cloud Run
+  # (Bypasses Cloud Run GCS zip source import, permanently resolving zip corruption)
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-cloud-run'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '$_SERVICE_NAME'
+      - '--image=$_IMAGE_NAME'
+      - '--region=$_REGION'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--set-env-vars=NODE_ENV=production'
+
+# Images registered in Google Cloud Registry
+images:
+  - '$_IMAGE_NAME'
+  - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:latest'
+
+# Archive the validated app.tar.gz in Cloud Storage
+artifacts:
+  objects:
+    location: 'gs://${PROJECT_ID}_cloudbuild/artifacts/$BUILD_ID'
+    paths:
+      - 'app.tar.gz'
+
+# Configurable build substitutions
+substitutions:
+  _SERVICE_NAME: 'medtrace-0'
+  _REGION: 'asia-east1'
+  _IMAGE_NAME: 'gcr.io/$PROJECT_ID/medtrace-0:$BUILD_ID'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

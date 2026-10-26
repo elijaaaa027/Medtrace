@@ -49,7 +49,14 @@ function loadEnv() {
 
 loadEnv();
 
-const PORT = parseInt(process.env.DEFAULT_APP_PORT || '3000', 10);
+let PORT = 3000;
+if (process.env.DEFAULT_APP_PORT && process.env.NGINX_PORT) {
+  PORT = parseInt(process.env.DEFAULT_APP_PORT, 10);
+} else if (process.env.PORT) {
+  PORT = parseInt(process.env.PORT, 10);
+} else if (process.env.DEFAULT_APP_PORT) {
+  PORT = parseInt(process.env.DEFAULT_APP_PORT, 10);
+}
 const MAPS_API_KEY = process.env.VITE_GOOGLE_MAPS_API_KEY || '';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
 const HTML_FILE = path.join(__dirname, 'index.html');

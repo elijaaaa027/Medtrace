@@ -2240,6 +2240,97 @@
       `;
     }
 
+    // DYNAMIC TIME-OF-DAY GREETING (Good morning / Good noon / Good afternoon / Good evening / Good night)
+    function getTimeGreeting(p, lang = 'en') {
+      const now = new Date();
+      const hour = now.getHours();
+      const fullName = (p && p.fullName) ? p.fullName.trim() : 'Patient';
+
+      // Time brackets:
+      // 05:00 - 11:59 -> Morning
+      // 12:00 - 12:59 -> Noon
+      // 13:00 - 16:59 -> Afternoon
+      // 17:00 - 21:59 -> Evening
+      // 22:00 - 04:59 -> Night / Late Night
+      let key = 'morning';
+      let icon = '🌅';
+      let periodEn = 'Good Morning';
+      let periodTa = 'காலை நேரம்';
+      let periodHi = 'प्रातःकाल';
+
+      if (hour >= 5 && hour < 12) {
+        key = 'morning';
+        icon = '🌅';
+        periodEn = 'Good Morning';
+        periodTa = 'காலை நேரம்';
+        periodHi = 'प्रातःकाल';
+      } else if (hour === 12) {
+        key = 'noon';
+        icon = '☀️';
+        periodEn = 'Good Noon';
+        periodTa = 'நண்பகல் நேரம்';
+        periodHi = 'दोपहर';
+      } else if (hour > 12 && hour < 17) {
+        key = 'afternoon';
+        icon = '🌤️';
+        periodEn = 'Good Afternoon';
+        periodTa = 'மதிய நேரம்';
+        periodHi = 'अपराह्न';
+      } else if (hour >= 17 && hour < 22) {
+        key = 'evening';
+        icon = '🌇';
+        periodEn = 'Good Evening';
+        periodTa = 'மாலை நேரம்';
+        periodHi = 'संध्याकाल';
+      } else {
+        key = 'night';
+        icon = '🌙';
+        periodEn = 'Good Night';
+        periodTa = 'இரவு நேரம்';
+        periodHi = 'रात्रि काल';
+      }
+
+      const dict = {
+        en: {
+          morning: `Good morning, ${fullName}`,
+          noon: `Good noon, ${fullName}`,
+          afternoon: `Good afternoon, ${fullName}`,
+          evening: `Good evening, ${fullName}`,
+          night: `Good night, ${fullName}`,
+          tag: periodEn,
+          overview: 'Real-time health overview and vitals summary'
+        },
+        ta: {
+          morning: `காலை வணக்கம், ${fullName}`,
+          noon: `நண்பகல் வணக்கம், ${fullName}`,
+          afternoon: `மதிய வணக்கம், ${fullName}`,
+          evening: `மாலை வணக்கம், ${fullName}`,
+          night: `இரவு வணக்கம், ${fullName}`,
+          tag: periodTa,
+          overview: 'நேரலை உடல்நலன் மற்றும் மருத்துவ அளவீடுகள்'
+        },
+        hi: {
+          morning: `शुभ प्रभात, ${fullName}`,
+          noon: `शुभ दोपहर, ${fullName}`,
+          afternoon: `शुभ दोपहर, ${fullName}`,
+          evening: `शुभ संध्या, ${fullName}`,
+          night: `शुभ रात्रि, ${fullName}`,
+          tag: periodHi,
+          overview: 'रीयल-टाइम स्वास्थ्य और वाइटल्स विवरण'
+        }
+      };
+
+      const l = dict[lang] || dict.en;
+      const formattedTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return {
+        title: l[key] || l.morning,
+        tag: l.tag,
+        overview: l.overview,
+        icon,
+        formattedTime
+      };
+    }
+
     // ACTIVE ROUTE SCREEN RENDERING
     function renderActiveRouteScreen(route, u, t) {
       const p = u.profile;
@@ -2248,21 +2339,41 @@
       if (route === 'DASHBOARD') {
         const nextAppt = u.appointments.find(a => a.status === 'Confirmed');
         const activePolicy = u.insurancePolicies.find(x => x.isActive);
+        const greeting = getTimeGreeting(p, state.language || 'en');
 
         return `
           <div class="space-y-6">
-            <!-- Hero Patient Header -->
-            <div class="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 class="text-3xl font-extrabold tracking-tight">${t.navDashboard}</h2>
-                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Real-time health overview for <span class="font-bold text-slate-800 dark:text-slate-200">${p.fullName}</span> (+91 ${state.activeUserId})</p>
+            <!-- Hero Patient Header with Dynamic Time-of-Day Greeting -->
+            <div class="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm card-gradient-hover">
+              <div class="space-y-1.5">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-2xl">${greeting.icon}</span>
+                  <span class="px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-mono">
+                    ${greeting.tag}
+                  </span>
+                  <span class="text-xs text-slate-400 font-mono">· ${greeting.formattedTime}</span>
+                  <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                    ABDM Live
+                  </span>
+                </div>
+                <h2 class="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                  ${greeting.title}
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 flex-wrap">
+                  <span>${greeting.overview}</span>
+                  <span class="text-slate-300 dark:text-slate-700">|</span>
+                  <span class="font-bold text-slate-700 dark:text-slate-300">+91 ${state.activeUserId}</span>
+                  <span class="text-slate-300 dark:text-slate-700">|</span>
+                  <span class="text-slate-500 font-mono">ABHA: ${p.abhaId || '91-8842-3901-4421'}</span>
+                </p>
               </div>
               <div class="flex items-center gap-2">
-                <button onclick="state.showBookingModal=true;render();" class="btn-theme-poppy px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-1.5">
+                <button onclick="state.showBookingModal=true;render();" class="btn-theme-poppy px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow-sm">
                   <span>➕</span>
                   <span>${t.bookAppointmentTitle}</span>
                 </button>
-                <button onclick="state.currentRoute='AI_CHAT';saveState();render();" class="px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold hover-poppy">
+                <button onclick="state.currentRoute='AI_CHAT';saveState();render();" class="px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold hover-poppy shadow-sm">
                   🤖 ${t.navAiChat}
                 </button>
               </div>

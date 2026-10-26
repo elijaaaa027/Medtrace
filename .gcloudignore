@@ -1,0 +1,27 @@
+.gcloudignore
+.git
+.gitignore
+
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment and secrets
+.env
+.dev.env.json
+*.keystore
+*.keystore.base64
+
+# Gradle and build artifacts
+.gradle/
+.kotlin/
+build/
+app/build/
+**/build/
+.build-outputs/
+
+# Helper scripts
+write_index_html.py
+generate_full_app.py
