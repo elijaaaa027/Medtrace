@@ -1,14 +1,41 @@
 # ==============================================================================
 # Google Cloud Build Pipeline - MedTrace
-# Fixes "Failed to import image gs://run-sources-.../app.zip" by:
-# 1. Packaging a verified POSIX USTAR app.tar.gz archive
-# 2. Building and pushing the container image to Google Container Registry
-# 3. Deploying the pre-built image to Cloud Run (100% bypasses GCS archive import errors)
+# 1. Executes `npm install` and `npm run build` to prepare dependencies and artifacts
+# 2. Packages application into a verified POSIX USTAR app.tar.gz archive
+# 3. Builds and pushes production container image to Google Container Registry
+# 4. Deploys container image directly to Google Cloud Run
 # ==============================================================================
 
 steps:
   # ----------------------------------------------------------------------------
-  # Step 1: Clean build artifacts and package workspace as a verified app.tar.gz
+  # Step 1: Install dependencies and build project
+  # ----------------------------------------------------------------------------
+  - name: 'node:22-slim'
+    id: 'npm-install-and-build'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        echo "=========================================================="
+        echo "Step 1: Installing dependencies and executing build"
+        echo "=========================================================="
+        
+        # Install dependencies
+        npm ci || npm install --omit=dev
+        
+        # Execute build script if defined in package.json
+        if node -e "const pkg = require('./package.json'); process.exit(pkg.scripts && pkg.scripts.build ? 0 : 1)" 2>/dev/null; then
+          echo "Executing: npm run build"
+          npm run build
+        else
+          echo "No build script found in package.json, continuing."
+        fi
+        
+        echo "Node dependencies and build phase completed successfully."
+
+  # ----------------------------------------------------------------------------
+  # Step 2: Clean build artifacts and package workspace as a verified app.tar.gz
   # ----------------------------------------------------------------------------
   - name: 'ubuntu'
     id: 'package-app-tar-gz'
@@ -18,7 +45,7 @@ steps:
       - |
         set -euo pipefail
         echo "=========================================================="
-        echo "Step 1: Packaging application into verified app.tar.gz"
+        echo "Step 2: Packaging application into verified app.tar.gz"
         echo "=========================================================="
         
         # Clean intermediate build caches to prevent archive bloat and corruption
@@ -60,7 +87,7 @@ steps:
         ls -lh ./app.tar.gz
 
   # ----------------------------------------------------------------------------
-  # Step 2: Build container image from Dockerfile
+  # Step 3: Build container image from Dockerfile
   # ----------------------------------------------------------------------------
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-docker-image'
@@ -73,7 +100,7 @@ steps:
       - '.'
 
   # ----------------------------------------------------------------------------
-  # Step 3: Push container image to Google Container Registry
+  # Step 4: Push container image to Google Container Registry
   # ----------------------------------------------------------------------------
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push-docker-image'
@@ -88,8 +115,7 @@ steps:
       - 'gcr.io/$PROJECT_ID/$_SERVICE_NAME:latest'
 
   # ----------------------------------------------------------------------------
-  # Step 4: Deploy pre-built container image directly to Cloud Run
-  # (Bypasses Cloud Run GCS zip source import, permanently resolving zip corruption)
+  # Step 5: Deploy pre-built container image directly to Google Cloud Run
   # ----------------------------------------------------------------------------
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-cloud-run'
